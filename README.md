@@ -20,6 +20,8 @@ A web-based system designed to streamline communication between **users** and **
 ## 📂 File Structure
 
 ├── Ebus.html # Main application file with Firebase logic
+
 ├── Ebus.css # Stylesheet with responsive UI
+
 ├── README.md # Project overview and setup instructions
 
