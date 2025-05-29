@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Ebus Management System</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+
+    <link rel="stylesheet" href="Ebus.css">
+
+    <style>
+        section {
+            display: none;
+            margin-top: 20px;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        section.active {
+            display: block;
+            opacity: 1;
+        }
+
+        input {
+            margin: 5px 0;
+            display: block;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Validation error */
+        .error {
+            border-color: #e53e3e !important;
+            box-shadow: 0 0 8px #e53e3e !important;
+        }
+        .error-message {
+            color: #e53e3e;
+            font-size: 0.85rem;
+            margin-top: -0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Suggestion dropdown */
+        .suggestions {
+            border: 1px solid #ccc;
+            max-height: 100px;
+            overflow-y: auto;
+            position: absolute;
+            background: white;
+            z-index: 1000;
+            width: 200px;
+            user-select: none;
+        }
+        .suggestion-item {
+            padding: 5px;
+            cursor: pointer;
+        }
+        .suggestion-item:hover,
+        .suggestion-item.active {
+            background-color: #eee;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1> Ebus Management System</h1>
+
+    <!-- 🔐 Login Section -->
+    <section id="login-section" class="active">
+        <h2>Login</h2>
+        <input type="email" id="login-email" placeholder="Email">
+        <div id="login-email-error" class="error-message" style="display:none;"></div>
+        <input type="password" id="login-password" placeholder="Password">
+        <div id="login-password-error" class="error-message" style="display:none;"></div>
+        <select id="login-role">
+            <option value="user">User</option>
+            <option value="driver">Driver</option>
+        </select>
+        <button id="login-btn" onclick="login()">Login</button><span id="login-spinner" style="display:none;" class="spinner"></span>
+        <p>Don't have an account? <a href="#" id="show-register">Register here</a></p>
+    </section>
+
+    <!-- 📝 Register Section -->
+    <section id="register-section" style="display:none;">
+        <h2>Register</h2>
+        <input type="email" id="register-email" placeholder="Email">
+        <div id="register-email-error" class="error-message" style="display:none;"></div>
+        <input type="password" id="register-password" placeholder="Password">
+        <div id="register-password-error" class="error-message" style="display:none;"></div>
+        <select id="register-role">
+            <option value="user">User</option>
+            <option value="driver">Driver</option>
+        </select>
+        <button id="register-btn" onclick="register()">Register</button><span id="register-spinner" style="display:none;" class="spinner"></span>
+        <p>Already have an account? <a href="#" id="show-login">Login here</a></p>
+    </section>
+
+    <!-- 👤 User Dashboard -->
+    <section id="user-section">
+        <h2>User: Search Bus Location</h2>
+        <input type="text" id="source" placeholder="Enter Source" oninput="showSuggestions('source')" autocomplete="off" aria-autocomplete="list" aria-haspopup="true" aria-expanded="false" aria-owns="source-suggestions" aria-activedescendant="">
+        <div id="source-suggestions" class="suggestions" role="listbox"></div>
+        <input type="text" id="destination" placeholder="Enter Destination" oninput="showSuggestions('destination')" autocomplete="off" aria-autocomplete="list" aria-haspopup="true" aria-expanded="false" aria-owns="destination-suggestions" aria-activedescendant="">
+        <div id="destination-suggestions" class="suggestions" role="listbox"></div>
+        <button id="search-btn" onclick="searchBus()">Search</button><span id="search-spinner" style="display:none;" class="spinner"></span>
+        <button id="track-btn" onclick="trackLocation()">Track Location</button>
+        <div id="results"></div>
+        <button id="logout-btn" onclick="confirmLogout()">Logout</button>
+    </section>
+
+    <!-- 🚌 Driver Dashboard -->
+    <section id="driver-section">
+        <h2>Driver: Post Bus Info</h2>
+        <input type="text" id="busNumber" placeholder="Bus Number">
+        <div id="busNumber-error" class="error-message" style="display:none;"></div>
+        <input type="text" id="type" placeholder="Bus Type">
+        <div id="type-error" class="error-message" style="display:none;"></div>
+        <input type="text" id="contact" placeholder="Contact">
+        <div id="contact-error" class="error-message" style="display:none;"></div>
+        <input type="text" id="sourceD" placeholder="Source">
+        <div id="sourceD-error" class="error-message" style="display:none;"></div>
+        <input type="text" id="destinationD" placeholder="Destination">
+        <div id="destinationD-error" class="error-message" style="display:none;"></div>
+        <button id="post-btn" onclick="confirmPostBusInfo()">Submit</button><span id="post-spinner" style="display:none;" class="spinner"></span>
+        <button id="logout-btn-driver" onclick="confirmLogout()">Logout</button>
+    </section>
+
+    <script>
+        // ✅ Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyA3s3F56Im10C7cXMr8YOp8a7sIrBGrse4",
+            authDomain: "ebus-management-system-a4243.firebaseapp.com",
+            projectId: "ebus-management-system-a4243",
+            storageBucket: "ebus-management-system-a4243.appspot.com",
+            messagingSenderId: "444703947987",
+            appId: "1:444703947987:web:1fbc7ff9e0ebd0ac01e826",
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // ✅ Login Function
+        function login() {
+            clearLoginErrors();
+            const email = document.getElementById("login-email").value.trim();
+            const password = document.getElementById("login-password").value.trim();
+            const role = document.getElementById("login-role").value;
+
+            if (!validateEmail(email)) {
+                showError("login-email", "Please enter a valid email.");
+                return;
+            }
+            if (password.length < 6) {
+                showError("login-password", "Password must be at least 6 characters.");
+                return;
+            }
+
+            toggleSpinner("login-spinner", true);
+            toggleButton("login-btn", false);
+            toggleButton("register-btn", false);
+
+            auth.signInWithEmailAndPassword(email, password)
+                .then(() => {
+                    toggleSpinner("login-spinner", false);
+                    toggleButton("login-btn", true);
+                    toggleButton("register-btn", true);
+                    clearUserInputsAndData();
+                    if (role === "user") {
+                        showSection("user-section");
+                    } else {
+                        showSection("driver-section");
+                    }
+                })
+                .catch(err => {
+                    toggleSpinner("login-spinner", false);
+                    toggleButton("login-btn", true);
+                    toggleButton("register-btn", true);
+                    alert("Login failed: " + err.message);
+                });
+        }
+
+        // Register Function
+        function register() {
+            clearRegisterErrors();
+            const email = document.getElementById("register-email").value.trim();
+            const password = document.getElementById("register-password").value.trim();
+            const role = document.getElementById("register-role").value;
+
+            if (!validateEmail(email)) {
+                showError("register-email", "Please enter a valid email.");
+                return;
+            }
+            if (password.length < 6) {
+                showError("register-password", "Password must be at least 6 characters.");
+                return;
+            }
+
+            toggleSpinner("register-spinner", true);
+            toggleButton("login-btn", false);
+            toggleButton("register-btn", false);
+
+            auth.createUserWithEmailAndPassword(email, password)
+                .then(() => {
+                    toggleSpinner("register-spinner", false);
+                    toggleButton("login-btn", true);
+                    toggleButton("register-btn", true);
+                    alert("Registration successful!");
+                    if (role === "user") {
+                        showSection("user-section");
+                    } else {
+                        showSection("driver-section");
+                    }
+                })
+                .catch(err => {
+                    toggleSpinner("register-spinner", false);
+                    toggleButton("login-btn", true);
+                    toggleButton("register-btn", true);
+                    alert("Registration failed: " + err.message);
+                });
+        }
+
+        // ✅ Search Bus Function (User)
+        function searchBus() {
+            clearSearchErrors();
+            const source = document.getElementById("source").value.toLowerCase().trim();
+            const destination = document.getElementById("destination").value.toLowerCase().trim();
+            const resultsDiv = document.getElementById("results");
+
+            if (!source) {
+                showError("source", "Please enter a source.");
+                return;
+            }
+            if (!destination) {
+                showError("destination", "Please enter a destination.");
+                return;
+            }
+
+            resultsDiv.innerHTML = "Searching...";
+            toggleSpinner("search-spinner", true);
+            toggleButton("search-btn", false);
+
+            db.collection("buses")
+                .where("source", "==", source)
+                .where("destination", "==", destination)
+                .get()
+                .then(snapshot => {
+                    toggleSpinner("search-spinner", false);
+                    toggleButton("search-btn", true);
+                    resultsDiv.innerHTML = "";
+                    if (snapshot.empty) {
+                        resultsDiv.innerHTML = "No buses found.";
+                    } else {
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            resultsDiv.innerHTML += `
+                <p>Bus: ${data.busNumber} | Type: ${data.type} | Contact: ${data.contact}</p>
+              `;
+                        });
+                    }
+                })
+                .catch(err => {
+                    toggleSpinner("search-spinner", false);
+                    toggleButton("search-btn", true);
+                    resultsDiv.innerHTML = "Error: " + err.message;
+                });
+        }
+
+        // ✅ Post Bus Function (Driver)
+        function postBusInfo() {
+            clearPostErrors();
+            const busNumber = document.getElementById("busNumber").value.trim();
+            const type = document.getElementById("type").value.trim();
+            const contact = document.getElementById("contact").value.trim();
+            const source = document.getElementById("sourceD").value.toLowerCase().trim();
+            const destination = document.getElementById("destinationD").value.toLowerCase().trim();
+
+            if (!busNumber) {
+                showError("busNumber", "Please enter bus number.");
+                return;
+            }
+            if (!type) {
+                showError("type", "Please enter bus type.");
+                return;
+            }
+            if (!contact) {
+                showError("contact", "Please enter contact.");
+                return;
+            }
+            if (!source) {
+                showError("sourceD", "Please enter source.");
+                return;
+            }
+            if (!destination) {
+                showError("destinationD", "Please enter destination.");
+                return;
+            }
+
+            toggleSpinner("post-spinner", true);
+            toggleButton("post-btn", false);
+
+            db.collection("buses").add({
+                busNumber, type, contact, source, destination, timestamp: new Date()
+            }).then(() => {
+                toggleSpinner("post-spinner", false);
+                toggleButton("post-btn", true);
+                alert("Bus posted successfully!");
+            })
+                .catch(err => {
+                    toggleSpinner("post-spinner", false);
+                    toggleButton("post-btn", true);
+                    alert("Error: " + err.message);
+                });
+        }
+
+        // Logout
+        function logout() {
+            auth.signOut().then(() => {
+                clearUserInputsAndData();
+                showSection("login-section");
+            });
+        }
+
+        // Utility: Show/Hide Sections
+        function showSection(id) {
+            document.querySelectorAll("section").forEach(sec => {
+                sec.classList.remove("active");
+                sec.style.display = "none";
+            });
+            const section = document.getElementById(id);
+            if (section) {
+                section.classList.add("active");
+                section.style.display = "block";
+            }
+        }
+
+        // Toggle between login and register sections
+        document.getElementById("show-register").addEventListener("click", function(e) {
+            e.preventDefault();
+            showSection("register-section");
+        });
+
+        document.getElementById("show-login").addEventListener("click", function(e) {
+            e.preventDefault();
+            showSection("login-section");
+        });
+
+        // New: Fetch distinct sources and destinations for suggestions
+        let sources = [];
+        let destinations = [];
+
+        // Track active suggestion index for keyboard navigation
+        let activeSuggestionIndex = { source: -1, destination: -1 };
+
+        function fetchSuggestions() {
+            db.collection("buses").get().then(snapshot => {
+                const sourceSet = new Set();
+                const destinationSet = new Set();
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.source) sourceSet.add(data.source);
+                    if (data.destination) destinationSet.add(data.destination);
+                });
+                sources = Array.from(sourceSet);
+                destinations = Array.from(destinationSet);
+            });
+        }
+
+        // Call fetchSuggestions on page load
+        window.onload = () => {
+            fetchSuggestions();
+            // Add keyboard navigation for suggestions
+            ["source", "destination"].forEach(type => {
+                const input = document.getElementById(type);
+                input.addEventListener("keydown", e => handleSuggestionKeyDown(e, type));
+            });
+        };
+
+        // Show suggestions dropdown
+        function showSuggestions(type) {
+            const input = document.getElementById(type);
+            const suggestionsDiv = document.getElementById(type + "-suggestions");
+            const value = input.value.toLowerCase();
+            suggestionsDiv.innerHTML = "";
+            activeSuggestionIndex[type] = -1;
+            input.setAttribute("aria-activedescendant", "");
+
+            if (!value) {
+                suggestionsDiv.style.display = "none";
+                input.setAttribute("aria-expanded", "false");
+                return;
+            }
+            const list = type === "source" ? sources : destinations;
+            const filtered = list.filter(item => item.toLowerCase().startsWith(value));
+            if (filtered.length === 0) {
+                suggestionsDiv.style.display = "none";
+                input.setAttribute("aria-expanded", "false");
+                return;
+            }
+            filtered.forEach((item, index) => {
+                const div = document.createElement("div");
+                div.className = "suggestion-item";
+                div.id = `${type}-suggestion-${index}`;
+                div.textContent = item;
+                div.onclick = () => {
+                    input.value = item;
+                    suggestionsDiv.style.display = "none";
+                    input.setAttribute("aria-expanded", "false");
+                };
+                suggestionsDiv.appendChild(div);
+            });
+            suggestionsDiv.style.display = "block";
+            input.setAttribute("aria-expanded", "true");
+        }
+
+        // Handle keyboard navigation in suggestions
+        function handleSuggestionKeyDown(event, type) {
+            const suggestionsDiv = document.getElementById(type + "-suggestions");
+            const items = suggestionsDiv.querySelectorAll(".suggestion-item");
+            if (items.length === 0) return;
+
+            if (event.key === "ArrowDown") {
+                event.preventDefault();
+                if (activeSuggestionIndex[type] < items.length - 1) {
+                    activeSuggestionIndex[type]++;
+                    updateActiveSuggestion(type, items);
+                }
+            } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                if (activeSuggestionIndex[type] > 0) {
+                    activeSuggestionIndex[type]--;
+                    updateActiveSuggestion(type, items);
+                }
+            } else if (event.key === "Enter") {
+                event.preventDefault();
+                if (activeSuggestionIndex[type] >= 0) {
+                    const selected = items[activeSuggestionIndex[type]];
+                    document.getElementById(type).value = selected.textContent;
+                    suggestionsDiv.style.display = "none";
+                    document.getElementById(type).setAttribute("aria-expanded", "false");
+                }
+            } else if (event.key === "Escape") {
+                suggestionsDiv.style.display = "none";
+                document.getElementById(type).setAttribute("aria-expanded", "false");
+            }
+        }
+
+        // Update active suggestion highlight
+        function updateActiveSuggestion(type, items) {
+            items.forEach(item => item.classList.remove("active"));
+            if (activeSuggestionIndex[type] >= 0) {
+                items[activeSuggestionIndex[type]].classList.add("active");
+                document.getElementById(type).setAttribute("aria-activedescendant", items[activeSuggestionIndex[type]].id);
+            } else {
+                document.getElementById(type).setAttribute("aria-activedescendant", "");
+            }
+        }
+
+        // Hide suggestions when clicking outside
+        document.addEventListener("click", function(event) {
+            if (!event.target.matches("#source") && !event.target.matches("#destination")) {
+                document.getElementById("source-suggestions").style.display = "none";
+                document.getElementById("destination-suggestions").style.display = "none";
+                document.getElementById("source").setAttribute("aria-expanded", "false");
+                document.getElementById("destination").setAttribute("aria-expanded", "false");
+            }
+        });
+
+        // Show error message and highlight input
+        function showError(id, message) {
+            const input = document.getElementById(id);
+            const errorDiv = document.getElementById(id + "-error");
+            if (input && errorDiv) {
+                input.classList.add("error");
+                errorDiv.textContent = message;
+                errorDiv.style.display = "block";
+            }
+        }
+
+        // Clear error messages and highlights for login inputs
+        function clearLoginErrors() {
+            ["login-email", "login-password"].forEach(id => {
+                const input = document.getElementById(id);
+                const errorDiv = document.getElementById(id + "-error");
+                if (input && errorDiv) {
+                    input.classList.remove("error");
+                    errorDiv.style.display = "none";
+                }
+            });
+        }
+
+        // Clear error messages and highlights for register inputs
+        function clearRegisterErrors() {
+            ["register-email", "register-password"].forEach(id => {
+                const input = document.getElementById(id);
+                const errorDiv = document.getElementById(id + "-error");
+                if (input && errorDiv) {
+                    input.classList.remove("error");
+                    errorDiv.style.display = "none";
+                }
+            });
+        }
+
+        // Clear error messages and highlights for search inputs
+        function clearSearchErrors() {
+            ["source", "destination"].forEach(id => {
+                const input = document.getElementById(id);
+                const errorDiv = document.getElementById(id + "-error");
+                if (input && errorDiv) {
+                    input.classList.remove("error");
+                    errorDiv.style.display = "none";
+                }
+            });
+        }
+
+        // Clear error messages and highlights for post inputs
+        function clearPostErrors() {
+            ["busNumber", "type", "contact", "sourceD", "destinationD"].forEach(id => {
+                const input = document.getElementById(id);
+                const errorDiv = document.getElementById(id + "-error");
+                if (input && errorDiv) {
+                    input.classList.remove("error");
+                    errorDiv.style.display = "none";
+                }
+            });
+        }
+
+        // Toggle spinner visibility
+        function toggleSpinner(id, show) {
+            const spinner = document.getElementById(id);
+            if (spinner) {
+                spinner.style.display = show ? "inline-block" : "none";
+            }
+        }
+
+        // Toggle button enabled/disabled state
+        function toggleButton(id, enabled) {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.disabled = !enabled;
+                btn.style.cursor = enabled ? "pointer" : "not-allowed";
+            }
+        }
+
+        // Validate email format
+        function validateEmail(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return re.test(email);
+        }
+
+        // Confirmation dialogs
+        function confirmLogout() {
+            if (confirm("Are you sure you want to logout?")) {
+                logout();
+            }
+        }
+
+        function confirmPostBusInfo() {
+            if (confirm("Are you sure you want to post this bus info?")) {
+                postBusInfo();
+            }
+        }
+
+        // Track Location Function
+        function trackLocation() {
+            clearSearchErrors();
+            const source = document.getElementById("source").value.toLowerCase().trim();
+            const destination = document.getElementById("destination").value.toLowerCase().trim();
+            const resultsDiv = document.getElementById("results");
+
+            if (!source) {
+                showError("source", "Please enter a source.");
+                return;
+            }
+            if (!destination) {
+                showError("destination", "Please enter a destination.");
+                return;
+            }
+
+            resultsDiv.innerHTML = "Fetching location...";
+            db.collection("buses")
+                .where("source", "==", source)
+                .where("destination", "==", destination)
+                .get()
+                .then(snapshot => {
+                    if (snapshot.empty) {
+                        resultsDiv.innerHTML = "No bus location found.";
+                    } else {
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            // Assuming location info is contact or can be extended
+                            resultsDiv.innerHTML = `<p>Bus: ${data.busNumber} is currently at source: ${data.source}. Contact: ${data.contact}</p>`;
+                        });
+                    }
+                })
+                .catch(err => {
+                    resultsDiv.innerHTML = "Error fetching location: " + err.message;
+                });
+        }
+
+        // Clear all user and driver inputs and displayed data
+        function clearUserInputsAndData() {
+            // Clear user inputs
+            document.getElementById("source").value = "";
+            document.getElementById("destination").value = "";
+            document.getElementById("results").innerHTML = "";
+
+            // Clear driver inputs
+            document.getElementById("busNumber").value = "";
+            document.getElementById("type").value = "";
+            document.getElementById("contact").value = "";
+            document.getElementById("sourceD").value = "";
+            document.getElementById("destinationD").value = "";
+        }
+
+    </script>
+
+</body>
+
+</html>
